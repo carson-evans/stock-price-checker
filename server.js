@@ -4,9 +4,12 @@ const express     = require('express');
 const bodyParser  = require('body-parser');
 const cors        = require('cors');
 
+const helmet = require('helmet');
+
 const apiRoutes         = require('./routes/api.js');
 const fccTestingRoutes  = require('./routes/fcctesting.js');
 const runner            = require('./test-runner');
+require("./db-connection")
 
 const app = express();
 
@@ -17,6 +20,17 @@ app.use(cors({origin: '*'})); //For FCC testing purposes only
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+// use 'helmet-csp' instead of helmet.contentSecurityPolicy().
+const contentSecurityPolicy = require("helmet-csp");
+app.use(contentSecurityPolicy({
+  useDefaults: true,
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'"],
+    styleSrc: ["'self'"]
+  }
+}));
+
 //Index page (static HTML)
 app.route('/')
   .get(function (req, res) {
@@ -26,9 +40,9 @@ app.route('/')
 //For FCC testing purposes
 fccTestingRoutes(app);
 
-//Routing for API 
-apiRoutes(app);  
-    
+//Routing for API
+apiRoutes(app);
+
 //404 Not Found Middleware
 app.use(function(req, res, next) {
   res.status(404)
