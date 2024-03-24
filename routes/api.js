@@ -1,39 +1,15 @@
 'use strict';
-
 // https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/[symbol]/quote
-
-// use body-parser to hanle request parameter
-// const bodyParser = require('body-parser');
-
-/*
-
-Expected result:
-/api/stock-prices?stock=GOOG
-/api/stock-prices?stock=GOOG&like=true
-/api/stock-prices?stock=GOOG&stock=MSFT
-/api/stock-prices?stock=GOOG&stock=MSFT&like=true
-
-*/
-
-// read configuration from .env file
 require('dotenv').config();
-
-// for sanitize
-const {
-  query,
-  validationResult
-} = require('express-validator')
-
-// for MongoDB
+const express = require('express');
+const axios = require('axios');
+const { query, validationResult } = require('express-validator')
 const mongoose = require('mongoose');
 mongoose.connect(process.env.DB)
 const Schema = mongoose.Schema
 
-// use axios to send request to get stock information
-const axios = require('axios');
-
 async function getStockDataViaAPI(stock) {
-  const url = `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock}/quote`
+  const url = `https://stock-price-checker-proxy.freecodecamp.rocks/v1/stock/${stock}/quote`;
   try {
     const response = await axios.get(url);
     return response.data;
@@ -48,24 +24,28 @@ async function getStockDataViaAPI(stock) {
 const stockSchema = new Schema({
   stock: {
     type: String,
-    unique: true
+    unique: true,
+    uppercase: true
   },
   price: {
     type: Number
   },
   likes: {
-    type: Number
+    type: [String]
   }
 })
 
 const Stock = mongoose.model('Stock', stockSchema)
 
-const findStock = async function (stock, price, addLike) {
+const findStock = async function (stock, price, addLike, userIp) {
   let condition = {
     stock: stock
   }
   // Need to handle timeout
-  let update = { price: price }
+  let update = {
+    $setOnInsert: { stock: stock, price: price },
+    ...(addLike && { $addToSet: { likes: userIp } }) // Add the user's IP to likes if addLike is true, avoiding duplicates
+  };  
   const result = await Stock.findOneAndUpdate(condition, update, {
     new: true,
     upsert: true // Make this update into an upsert
@@ -82,7 +62,7 @@ const findStock = async function (stock, price, addLike) {
   return result
 }
 
-async function getStockData(stock, addLike) {
+async function getStockData(stock, addLike, userIp) {
   let result = {};
   if (Array.isArray(stock) && stock.length == 2) {
     let stockData = [];
@@ -131,12 +111,16 @@ module.exports = function (app) {
       return response.json({ errors: errors.array() })
     }
 
-    const stock = request.query.stock
+    const stock = typeof request.query.stock === 'string'
+      ? request.query.stock.toUpperCase()
+      : request.query.stock.map(s => s.toUpperCase());
+
     let addLike = false;
     if (request.query.like == 'true' || request.query.like == 1) {
       addLike = true;
     }
-    const result = await getStockData(stock, addLike);
+    const userIp = request.ip;
+    const result = await getStockData(stock, addLike, userIp);
     response.json(result)
   })
 };
