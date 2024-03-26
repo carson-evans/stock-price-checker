@@ -22,14 +22,17 @@ app.use(bodyParser.urlencoded({ extended: true }));
 
 // use 'helmet-csp' instead of helmet.contentSecurityPolicy().
 const contentSecurityPolicy = require("helmet-csp");
-app.use(contentSecurityPolicy({
-  useDefaults: true,
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'"],
-    styleSrc: ["'self'"]
-  }
-}));
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"], // Only allow resources from domain
+      scriptSrc: ["'self'"],  // Allow scripts from domain
+      styleSrc: ["'self'"],   // Allow styles from domain
+      imgSrc: ["'self'"],     // Allow images from domain
+    },
+  })
+);
+
 
 //Index page (static HTML)
 app.route('/')

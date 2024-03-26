@@ -31,36 +31,47 @@ const stockSchema = new Schema({
     type: Number
   },
   likes: {
-    type: [String]
+    type: Number,
+    default: 0
   }
 })
 
 const Stock = mongoose.model('Stock', stockSchema)
 
+// Example schema for tracking user likes
+const userLikeSchema = new mongoose.Schema({
+  stock: String,
+  ip: String,
+});
+
+const UserLike = mongoose.model('UserLike', userLikeSchema);
+
 const findStock = async function (stock, price, addLike, userIp) {
-  let condition = {
-    stock: stock
-  }
-  // Need to handle timeout
-  let update = {
-    $setOnInsert: { stock: stock, price: price },
-    ...(addLike && { $addToSet: { likes: userIp } }) // Add the user's IP to likes if addLike is true, avoiding duplicates
-  };  
-  const result = await Stock.findOneAndUpdate(condition, update, {
+  let stockUpdate = {
+    $setOnInsert: { stock: stock, price: price }
+  };
+
+  // Ensure stock exists with provided price or upsert it
+  const stockResult = await Stock.findOneAndUpdate({ stock: stock }, stockUpdate, {
     new: true,
-    upsert: true // Make this update into an upsert
+    upsert: true
   });
 
-  if (result.likes == null) {
-    result.likes = 0;
+  if (addLike) {
+    // Check if the IP already liked the stock
+    const likeExists = await UserLike.findOne({ stock: stock, ip: userIp });
+
+    if (!likeExists) {
+      // Record the like to prevent future duplicates from the same IP
+      await new UserLike({ stock: stock, ip: userIp }).save();
+
+      await Stock.updateOne({ stock: stock }, { $inc: { likes: 1 } });
+    }
   }
 
-  if (addLike) {
-    result.likes = result.likes + 1;
-  }
-  await result.save()
-  return result
-}
+  // Return the updated stock document
+  return await Stock.findOne({ stock: stock });
+};
 
 async function getStockData(stock, addLike, userIp) {
   let result = {};
@@ -70,14 +81,13 @@ async function getStockData(stock, addLike, userIp) {
       const target_stock = stock[i];
       try {
         const record = await getStockDataViaAPI(target_stock);
-        // Pass userIp to findStock when addLike is true
         const dbResult = await findStock(target_stock, record.latestPrice, addLike, userIp);
-        stockData.push({ stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes.length }); // Assuming likes is an array of user IPs
+        stockData.push({ stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes });
       } catch (error) {
         console.error(error);
       }
     }
-    // Calculate rel_likes based on the length of likes array
+    // Calculate rel_likes based on the actual number of likes
     let diff = stockData[0].likes - stockData[1].likes;
     stockData[0].rel_likes = diff;
     stockData[1].rel_likes = -diff;
@@ -85,9 +95,8 @@ async function getStockData(stock, addLike, userIp) {
   } else {
     try {
       const record = await getStockDataViaAPI(stock);
-      // Pass userIp to findStock when addLike is true
       const dbResult = await findStock(stock, record.latestPrice, addLike, userIp);
-      result.stockData = { stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes.length }; // Assuming likes is an array of user IPs
+      result.stockData = { stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes };
     } catch (error) {
       console.error(error);
     }
@@ -100,11 +109,9 @@ module.exports = function (app) {
     query('stock').not().isEmpty().escape(),
     query('like').optional({ nullable: true }).escape()
   ], async (request, response) => {
-
-    // check Validation
-    const errors = validationResult(request)
+    const errors = validationResult(request);
     if (!errors.isEmpty()) {
-      return response.json({ errors: errors.array() })
+      return response.json({ errors: errors.array() });
     }
 
     const stock = typeof request.query.stock === 'string'
@@ -112,11 +119,23 @@ module.exports = function (app) {
       : request.query.stock.map(s => s.toUpperCase());
 
     let addLike = false;
-    if (request.query.like == 'true' || request.query.like == 1) {
+    if (request.query.like === 'true' || request.query.like === '1') {
       addLike = true;
     }
     const userIp = request.ip;
-    const result = await getStockData(stock, addLike, userIp);
-    response.json(result)
-  })
+    try {
+      const result = await getStockData(stock, addLike, userIp);
+      if (Array.isArray(result.stockData)) {
+        result.stockData.forEach(stockData => {
+          stockData.rel_likes = stockData.rel_likes || 0;
+        });
+      } else {
+        result.stockData.likes = result.stockData.likes || 0;
+      }
+      response.json(result);
+    } catch (error) {
+      console.error('Error fetching stock data:', error);
+      response.status(500).json({ error: 'Internal server error' });
+    }
+  });
 };
