@@ -17,6 +17,7 @@
 		"express-validator": "^7.0.1",
 		"helmet": "^3.23.3",
 		"mocha": "^10.3.0",
+		"mongodb": "^6.5.0",
 		"mongoose": "^8.2.0",
 		"mongoose-sequence": "^6.0.1"
 	},

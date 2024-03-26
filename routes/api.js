@@ -67,31 +67,27 @@ async function getStockData(stock, addLike, userIp) {
   if (Array.isArray(stock) && stock.length == 2) {
     let stockData = [];
     for (let i = 0; i < stock.length; i++) {
-      const target_stock = stock[i]
+      const target_stock = stock[i];
       try {
-        const record = await getStockDataViaAPI(target_stock)
-        const dbResult = await findStock(target_stock, record.latestPrice, addLike);
-        stockData.push({ stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes });
+        const record = await getStockDataViaAPI(target_stock);
+        // Pass userIp to findStock when addLike is true
+        const dbResult = await findStock(target_stock, record.latestPrice, addLike, userIp);
+        stockData.push({ stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes.length }); // Assuming likes is an array of user IPs
       } catch (error) {
         console.error(error);
       }
     }
+    // Calculate rel_likes based on the length of likes array
     let diff = stockData[0].likes - stockData[1].likes;
-    if (diff > 0) {
-      stockData[0].rel_likes = diff;
-      stockData[1].rel_likes = 0 - diff;
-    } else {
-      stockData[0].rel_likes = 0 - diff;
-      stockData[1].rel_likes = diff;
-    }
-    delete stockData[0].likes;
-    delete stockData[1].likes;
+    stockData[0].rel_likes = diff;
+    stockData[1].rel_likes = -diff;
     result.stockData = [stockData[0], stockData[1]];
   } else {
     try {
       const record = await getStockDataViaAPI(stock);
-      const dbResult = await findStock(stock, record.latestPrice, addLike);
-      result.stockData = { stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes };
+      // Pass userIp to findStock when addLike is true
+      const dbResult = await findStock(stock, record.latestPrice, addLike, userIp);
+      result.stockData = { stock: dbResult.stock, price: dbResult.price, likes: dbResult.likes.length }; // Assuming likes is an array of user IPs
     } catch (error) {
       console.error(error);
     }
